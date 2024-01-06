@@ -18,6 +18,7 @@ from enum import Enum, auto
 import traceback
 from typing import List
 from datetime import datetime
+from pathlib import Path
 import logging
 logging.basicConfig(level = logging.INFO, format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -109,6 +110,18 @@ class FuzzyArtmapGpuDistributed:
     def save_model(self, descriptor):
         return self.training_fuzzy_artmap.save_model(descriptor)
     
+    def load_model(self, model_path):
+        if self.mode == ProcessingMode.distributed:
+            raise NotImplementedError("Cannot currently load a model when running distributed mode.")
+        loaded_f1_size, loaded_f2_size, parameters = self.training_fuzzy_artmap.load_model(model_path)
+        self.f1_size = loaded_f1_size
+        self.f2_size = loaded_f2_size
+        self.number_of_categories = parameters["number_of_categories"]
+        self.rho_a_bar =  parameters["rho_a_bar"]
+        self.max_nodes = parameters["max_nodes"]
+        self.use_cuda_if_available = parameters["use_cuda_if_available"]
+        self.committed_beta = parameters["committed_beta"]
+    
     def get_number_of_nodes(self):
         return self.training_fuzzy_artmap.weight_ab.shape[0]
 
@@ -130,7 +143,6 @@ class FuzzyArtmapGpuDistributed:
 class FuzzyArtMapGpuWorker:
     def __init__(self):
         self.alpha = 0.001  # "Choice" parameter > 0. Set small for the conservative limit (Fuzzy AM paper, Sect.3)
-        self.excluded_document_ids = set()
         self.weight_a = None
         self.weight_ab = None
         self.device = None
@@ -155,6 +167,7 @@ class FuzzyArtMapGpuWorker:
         self.profiler = None
 
         self.dtype = torch.float
+        self.parameters = {}
 
     def init(self, f1_size: int = 10, f2_size: int = 10, number_of_categories: int = 2, rho_a_bar = 0, max_nodes = None, use_cuda_if_available = False, committed_beta = 0.75):
         self.rho_a_bar = rho_a_bar  # Baseline vigilance for ARTa, in range [0,1]
@@ -171,6 +184,13 @@ class FuzzyArtMapGpuWorker:
         self.weight_ab = torch.ones((f2_size, number_of_categories), device=self.device, dtype=self.dtype)
         self.A_and_w = torch.empty(self.weight_a.shape, device=self.device, dtype=self.dtype)
         logger.info(f"f1_size: {f1_size}, f2_size:{f2_size}, committed beta = {self.committed_beta}")
+        self.parameters["f1_size"] = f1_size
+        self.parameters["f2_size"] = f2_size
+        self.parameters["number_of_categories"] = number_of_categories
+        self.parameters["rho_a_bar"] = rho_a_bar
+        self.parameters["max_nodes"] = max_nodes
+        self.parameters["use_cuda_if_available"] = use_cuda_if_available
+        self.parameters["committed_beta"] = committed_beta
         # self.profiler = cProfile.Profile()
 
     def _resonance_search_vector(self, input_vector: torch.tensor, already_reset_nodes: List[int], rho_a: float):
@@ -287,9 +307,25 @@ class FuzzyArtMapGpuWorker:
     def save_model(self, descriptor):
         model_timestamp = datetime.now().isoformat().replace("-", "_").replace(":", "_").replace(".", "_")
         cleaned_descriptor = descriptor.replace("-", "_").replace(":", "_").replace(".", "_")
-        model_path = f"models/famgd_{model_timestamp}_{cleaned_descriptor}.pt"
-        torch.save((self.weight_a, self.weight_ab, self.committed_nodes), model_path)
+        model_path = f"famgd_{model_timestamp}_{cleaned_descriptor}.pt"
+        torch.save((self.weight_a, self.weight_ab, self.committed_nodes, self.parameters), model_path)
         return model_path
+
+    def load_model(self, model_path):
+        if not Path(model_path).is_file():
+            raise FileNotFoundError(f"`{model_path}` was not found or is a directory")
+        logger.info(f"Loading model from {model_path}")
+        weight_a, weight_ab, committed_nodes, parameters = torch.load(model_path)
+
+        loaded_f1_size = weight_a.shape[1]
+        loaded_f2_size = weight_a.shape[0]
+        logger.info(f"Parameter f1: {parameters['f1_size']}, f2: {parameters['f2_size']} - Actual f1: {loaded_f1_size}, f2: {loaded_f2_size}")
+        self.init(loaded_f1_size, loaded_f2_size, parameters["number_of_categories"], parameters["rho_a_bar"], parameters["max_nodes"], parameters["use_cuda_if_available"], parameters["committed_beta"])
+        self.weight_a = weight_a
+        self.weight_ab = weight_ab
+        self.committed_nodes = committed_nodes
+        logger.info("Model loaded")
+        return loaded_f1_size, loaded_f2_size, parameters
 
 
 class FuzzyArtmapWorkerServer(TCPServer):

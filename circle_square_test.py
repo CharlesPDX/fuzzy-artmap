@@ -47,45 +47,67 @@ def get_traceback_string(e: Exception):
         return ''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__))
 
 
-async def main():
-    x = FuzzyArtmapGpuDistributed(4, 1, rho_a_bar = 0.0)
-    await x.initialize_workers()
+async def run_prediction_test(fuzzy_artmap):
+    test_predictions = Counter()
+    for i in range(test_pats):
+        test_input = torch.transpose(test_set[:, i, None], 0, 1)
+        ground_truth = torch.transpose(test_truth[:, i, None], 0, 1)
+        complement_encoded_input = FuzzyArtMapGpuWorker.complement_encode(test_input)        
+        prediction, fuzzy_match = await fuzzy_artmap.predict(complement_encoded_input)
+        correct = torch.all(prediction == ground_truth).item()
+        test_predictions.update([correct])
+    return test_predictions
+
+
+async def run_model_from_saved_model():
+    fuzzy_artmap = FuzzyArtmapGpuDistributed(4, 1, rho_a_bar = 0.0)
+    fuzzy_artmap.load_model("./famgd_2024_01_06T13_06_48_844734_circle_square.pt")
+    start_time = datetime.now()
+    print(start_time)
+    test_predictions = await run_prediction_test(fuzzy_artmap)
+    stop_time = datetime.now()
+    print(f"elapsed: {stop_time-start_time}- {stop_time}")
+    print(test_predictions)
+    print(fuzzy_artmap.get_weight_a().shape)
+    print(fuzzy_artmap.get_weight_ab().shape)
+    print(torch.count_nonzero(fuzzy_artmap.get_weight_a()[:, 0] < 1, 0))
+
+
+async def train_from_model_from_empty():
+    fuzzy_artmap = FuzzyArtmapGpuDistributed(4, 1, rho_a_bar = 0.0)
+    await fuzzy_artmap.initialize_workers()
     start_time = datetime.now()
     print(start_time)
     for i in range(num_pats):
         test_input = torch.transpose(a[:, i, None], 0, 1)
         ground_truth = torch.transpose(bmat[:, i, None], 0, 1)
         complement_encoded_input = FuzzyArtMapGpuWorker.complement_encode(test_input)
-        await x.train([complement_encoded_input], [ground_truth])
+        await fuzzy_artmap.train([complement_encoded_input], [ground_truth])
 
     out_test_point = torch.tensor(([0.115, 0.948],))
     encoded_test_point = FuzzyArtMapGpuWorker.complement_encode(out_test_point)
-    prediction, fuzzy_match = await x.predict(encoded_test_point)
+    prediction, fuzzy_match = await fuzzy_artmap.predict(encoded_test_point)
     print(prediction)
 
     in_test_point = torch.tensor(([0.262, 0.782],))
     encoded_test_point = FuzzyArtMapGpuWorker.complement_encode(in_test_point)
-    prediction, fuzzy_match = await x.predict(encoded_test_point)
+    prediction, fuzzy_match = await fuzzy_artmap.predict(encoded_test_point)
     print(prediction)
 
-    test_predictions = Counter()
-    for i in range(test_pats):
-        test_input = torch.transpose(test_set[:, i, None], 0, 1)
-        ground_truth = torch.transpose(test_truth[:, i, None], 0, 1)
-        complement_encoded_input = FuzzyArtMapGpuWorker.complement_encode(test_input)        
-        prediction, fuzzy_match = await x.predict(complement_encoded_input)
-        correct = torch.all(prediction == ground_truth).item()
-        test_predictions.update([correct])
+    test_predictions = await run_prediction_test(fuzzy_artmap)
     stop_time = datetime.now()
     print(f"elapsed: {stop_time-start_time}- {stop_time}")
     print(test_predictions)
-    print(x.get_weight_a().shape)
-    print(x.get_weight_ab().shape)
-    print(torch.count_nonzero(x.get_weight_a()[:, 0] < 1, 0))
+    print(fuzzy_artmap.get_weight_a().shape)
+    print(fuzzy_artmap.get_weight_ab().shape)
+    print(torch.count_nonzero(fuzzy_artmap.get_weight_a()[:, 0] < 1, 0))
+    # fuzzy_artmap.save_model("circle_square")
+
 
 if __name__ == "__main__":
     try:
-        tornado.ioloop.IOLoop.current().run_sync(main)
+        tornado.ioloop.IOLoop.current().run_sync(train_from_model_from_empty)
+        tornado.ioloop.IOLoop.current().run_sync(run_model_from_saved_model)
     except tornado.iostream.StreamClosedError as stream_error:
         trace_back_string = get_traceback_string(stream_error)
         LOGGER.fatal(f"At least one worker is terminated, cannot continue, exiting\ntraceback: {trace_back_string}")
