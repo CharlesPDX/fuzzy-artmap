@@ -1,1 +1,1 @@
-from .fuzzy_artmap_distributed_gpu import *
+from .fuzzy_artmap import FuzzyArtMap
