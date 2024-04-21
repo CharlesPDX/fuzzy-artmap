@@ -104,7 +104,13 @@ class FuzzyArtMap:
         any_value_below_zero = (vector < 0.0).any()
         assert not any_value_below_zero.item(), f"{vector_name} vector contains one or more values less than 0.0"
 
-    def set_params(self, **parameters: Dict[str, Any]) -> TFuzzyArtMap:
+        has_nan = torch.any(torch.isnan(vector))
+        assert not has_nan, f"{vector_name} contains one or more NaN values"
+
+        has_non_floating_point_values = torch.all(torch.is_floating_point(vector))
+        assert not has_non_floating_point_values, f"{vector_name} contains one or more non-floating point values"
+
+    def set_params(self, parameters: Dict[str, Any]) -> TFuzzyArtMap:
         for parameter, value in parameters.items():
             setattr(self, parameter, value)
             self.parameters[parameter] = value
@@ -208,7 +214,7 @@ class FuzzyArtMap:
         self.committed_nodes.add(J)
 
     def fit(self, input_vectors, class_vectors) -> None:
-        if not self.validated:
+        if not self.validated and self.debugging:
             self._range_validation()
             self.validated = True
 
@@ -218,10 +224,11 @@ class FuzzyArtMap:
 
 
     @staticmethod
-    def complement_encode(original_vector: torch.tensor) -> torch.tensor:
+    def complement_encode(original_vector: torch.tensor, debug: bool = False) -> torch.tensor:
+        if debug:
+            FuzzyArtMap._vector_validation(complement_encoded_value, "Original")
         complement = 1-original_vector
         complement_encoded_value = torch.hstack((original_vector,complement))
-        FuzzyArtMap._vector_validation(complement_encoded_value, "Complement encoded")
         return complement_encoded_value
 
     def predict(self, input_vector: torch.tensor) -> torch.tensor:
