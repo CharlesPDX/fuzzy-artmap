@@ -98,6 +98,8 @@ class FuzzyArtMap:
 
     @staticmethod
     def _vector_validation(vector: torch.tensor, vector_name: str) -> None:
+        assert len(vector) == 1 or vector.shape[0] == 1, f"{vector_name} is not a 1d vector, {vector.shape}"
+
         any_value_over_one = (vector > 1.0).any()
         assert not any_value_over_one.item(), f"{vector_name} vector contains one or more values greater than 1.0"
         
@@ -199,11 +201,11 @@ class FuzzyArtMap:
                 resonant_ab = True
             else: 
                 already_reset_nodes.append(J)
-                rho_a = x + self.epsilon                
+                rho_a = x + self.epsilon
                 if rho_a > 1.0:
                     rho_a = 1.0 - self.epsilon
 
-        self.updated_nodes.add(J)
+        self.updated_nodes.add(str(J))
         if J in self.committed_nodes:
             beta = self.committed_beta
         else:
@@ -213,20 +215,22 @@ class FuzzyArtMap:
         self.weight_ab[J, None] = (self.beta_ab * z) + ((1-self.beta_ab) * self.weight_ab[J, None])
         self.committed_nodes.add(J)
 
-    def fit(self, input_vectors, class_vectors) -> None:
+    def fit(self, input_vectors: list[torch.tensor], class_vectors: list[torch.tensor]) -> None:
         if not self.validated and self.debugging:
             self._range_validation()
             self.validated = True
 
         for vector_index, input_vector in enumerate(input_vectors):
             self._train(input_vector, class_vectors[vector_index])
+        
+        logger.debug(f"training updated: {','.join(self.updated_nodes)}")
         self.updated_nodes.clear()
 
 
     @staticmethod
     def complement_encode(original_vector: torch.tensor, debug: bool = False) -> torch.tensor:
         if debug:
-            FuzzyArtMap._vector_validation(complement_encoded_value, "Original")
+            FuzzyArtMap._vector_validation(original_vector, "Original")
         complement = 1-original_vector
         complement_encoded_value = torch.hstack((original_vector,complement))
         return complement_encoded_value
