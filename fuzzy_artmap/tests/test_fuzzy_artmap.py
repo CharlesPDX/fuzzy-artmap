@@ -128,23 +128,30 @@ def test_fuzzy_artmap_supports_max_nodes_mode() -> None:
     assert starting_A_and_w_shape[0] == fuzzy_artmap.A_and_w.shape[0]
     assert starting_A_and_w_shape[1] == fuzzy_artmap.A_and_w.shape[1]
 
+    # These values are specified in _resonance_search_vector
+    # It is only important that they are less than the starting values.
     assert fuzzy_artmap.rho_ab < starting_rho_ab
     assert fuzzy_artmap.beta_ab < starting_beta_ab
     assert fuzzy_artmap.rho_a_bar < starting_rho_a_bar
 
 
-def test_calculate_activation() -> None:
+def test_calculate_first_category_choice() -> None:
+    fuzzy_artmap = FuzzyArtMap(4, f2_size=1)
+
     # Number of F2 nodes
     expected_N = 1
 
+    # |I ^ wj| - The L1 norm of the input min the weight, initial weights are initialized to the 1s vector
+    # so I ^ wj -> I, therefore expected S is the sum of the values in the vector I
+    expected_S = torch.sum(training_in_value, 1)
 
-    expected_S = 0
+    # The category choice function is the S term divided by alpha + the l1 norm of the weight vector for
+    # the category (wj) - since no learning has taken place yet, this is a ones vector
+    expected_T = expected_S / (fuzzy_artmap.alpha + torch.sum(torch.ones((1, 4)), 1))
+    
+    N, S, T = fuzzy_artmap._calculate_category_choice(training_in_value)
 
-    expected_T = 0
+    assert N == expected_N
+    assert torch.equal(S, expected_S)
+    assert torch.equal(T, expected_T)
 
-    fuzzy_artmap = FuzzyArtMap(4, f2_size=1, rho_a_bar=0.95)
-    N, S, T = fuzzy_artmap._calculate_activation(training_in_value)
-
-    # assert N == expected_N
-    # assert S == expected_S
-    # assert T == expected_T

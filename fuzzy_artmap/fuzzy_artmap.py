@@ -127,8 +127,10 @@ class FuzzyArtMap:
             FuzzyArtMap._vector_validation(input_vector, "Input")
 
         resonant_a = False
-        N, S, T = self._calculate_activation(input_vector)
+        N, S, T = self._calculate_category_choice(input_vector)
         _, indices = torch.sort(T, stable=True, descending=True)
+        
+        # This is the left-hand term of the resonance check equation (eq 7) for all categories
         all_membership_degrees = S / self.input_vector_sum
         T[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self.dtype, device=self.device)
         has_evaluated_all_nodes = False
@@ -137,6 +139,7 @@ class FuzzyArtMap:
                 if J.item() in already_reset_nodes:
                     continue
 
+                # check for resonance (the full expression of eq 7)
                 if all_membership_degrees[J].item() >= rho_a or math.isclose(all_membership_degrees[J].item(), rho_a):
                     resonant_a = True
                     break
@@ -145,7 +148,8 @@ class FuzzyArtMap:
                     already_reset_nodes.append(indices[J].item())
                     T[indices[J].item()] = 0
 
-            # Creating a new node if we've reset all of them
+            # Creating new nodes if we've reset all of them
+            # or go into fixed node mode
             if len(already_reset_nodes) >= N:
                 if has_evaluated_all_nodes:
                     raise RuntimeError(f"Resonance A search failed twice, ensure values are in range [0.0, 1.0]")
@@ -163,18 +167,32 @@ class FuzzyArtMap:
                     logger.warning(f"Maximum number of nodes reached, {len(already_reset_nodes)} - adjusting rho_ab to {self.rho_ab} and beta_ab to {self.beta_ab}")
                     already_reset_nodes.clear()
                 has_evaluated_all_nodes = True
-                N, S, T = self._calculate_activation(input_vector)
+                N, S, T = self._calculate_category_choice(input_vector)
                 _, indices = torch.sort(T, stable=True, descending=True)
                 all_membership_degrees = S / self.input_vector_sum
                 T[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self.dtype, device=self.device)
                 
+        # return the selected category index j and the degree of membership
         return J.item(), all_membership_degrees[J].item()
 
-    def _calculate_activation(self, input_vector: torch.tensor) -> Tuple[int, torch.tensor, torch.tensor]:
+    def _calculate_category_choice(self, input_vector: torch.tensor) -> Tuple[int, torch.tensor, torch.tensor]:
+        """
+        This method calculates the category choice function for all Tj, which is
+        The L1-norm of I fuzzy min wj divided by alpha plus the L1-norm of wj ->
+        |I ^ wj| / α + |wj|
+        See Carpenter et al. (1992) p.700 eq 2-4
+        """
+
         N = self.weight_a.shape[0]  # Count how many F2a nodes we have
 
+        # This is the top/first term of the category choice function - I (the input vector) min weight j
+        # except here it's done for all categories (j's)
         torch.minimum(input_vector.repeat(N,1), self.weight_a, out=self.A_and_w) # Fuzzy AND = min
+        
+        # Calculate the L1 norm (eq 4), save this term since it's used for next to calculate T (the category choice value)
+        # And for resonance/fuzzy membership
         S = torch.sum(self.A_and_w, 1) # Row vector of signals to F2 nodes
+
         T = S / (self.alpha + torch.sum(self.weight_a, 1)) # Choice function vector for F2
         return N,S,T
 
