@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fuzzy-artmap"
+version = "0.0.1"
+description = "Pytorch-based implementation of Fuzzy ARTMAP"
+readme = "README.md"
+authors = [{ name = "Charles Courchaine", email = "fuzzyartmap@charles.courchaine.dev" }]
+keywords = ["fuzzy", "artmap", "art", "adaptive", "resonance", "theory"]
+dependencies = [
+    "torch"
+]
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = ["matplotlib", "ipympl", "pytest"]
+
+[project.urls]
+Homepage = "https://github.com/CharlesPDX/fuzzy-artmap"
