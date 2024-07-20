@@ -46,7 +46,7 @@ def get_traceback_string(e: Exception):
 
 
 def main():
-    x = FuzzyArtMap(4, 1, rho_a_bar = 0.0)
+    x = FuzzyArtMap(4, 1, baseline_vigilance = 0.0)
     start_time = datetime.now()
     print(start_time)
     for i in range(number_of_training_patterns):

@@ -13,15 +13,15 @@ TFuzzyArtMap = TypeVar("TFuzzyArtMap", bound="FuzzyArtMap")
 
 class FuzzyArtMap:
     def __init__(self,
-                 f1_size: int,
-                 f2_size: int = 10,
+                 input_vector_size: int,
+                 initial_number_of_category_nodes: int = 10,
                  number_of_labels: int = 2,
-                 rho_a_bar: float = 0.0,
-                 beta: float = 1.0,
-                 beta_ab: float = 1.0,
-                 rho_ab: float = 0.95,
+                 baseline_vigilance: float = 0.0,
+                 learning_rate: float = 1.0,
+                 map_field_learning_rate: float = 1.0,
+                 map_field_vigilance: float = 0.95,
                  max_nodes: int = None,
-                 committed_beta: float = 0.75,
+                 committed_node_learning_rate: float = 0.75,
                  use_cuda_if_available: bool = False,
                  debugging: bool = False,
                  ):
@@ -39,14 +39,14 @@ class FuzzyArtMap:
         committed_beta - the learning rate for nodes that have already been commited (see Fast-Commit Slow-Recode Option in Carpenter et al., 1992)
         debugging - Enables or disables bounds checking, and profiling; enabling may result in very poor execution time performance
         """
-        self.f1_size = f1_size
-        self.f2_size = f2_size
+        self.f1_size = input_vector_size
+        self.f2_size = initial_number_of_category_nodes
         self.number_of_labels = number_of_labels
-        self.beta = beta  
-        self.beta_ab = beta_ab 
-        self.rho_ab = rho_ab
-        self.rho_a_bar = rho_a_bar  # Baseline vigilance for ARTa, in range [0,1]
-        self.committed_beta = committed_beta
+        self.beta = learning_rate  
+        self.beta_ab = map_field_learning_rate 
+        self.rho_ab = map_field_vigilance
+        self.rho_a_bar = baseline_vigilance  # Baseline vigilance for ARTa, in range [0,1]
+        self.committed_beta = committed_node_learning_rate
         self.max_nodes = max_nodes
         self.use_cuda_if_available = use_cuda_if_available
         self.debugging = debugging
@@ -250,7 +250,7 @@ class FuzzyArtMap:
         if debug:
             FuzzyArtMap._vector_validation(original_vector, "Original")
         complement = 1-original_vector
-        complement_encoded_value = torch.hstack((original_vector,complement))
+        complement_encoded_value = torch.hstack((original_vector, complement))
         return complement_encoded_value
 
     def predict(self, input_vector: torch.tensor) -> torch.tensor:

@@ -13,7 +13,7 @@ test_out_value = tensor([[0.99,0.99,0.11,0.11]])
 
 def test_fuzzy_artmap_selects_first_uncommited_node_with_wide_variance_input() -> None:
 
-    fuzzy_artmap = FuzzyArtMap(4, f2_size=2, rho_a_bar=0.95)
+    fuzzy_artmap = FuzzyArtMap(4, initial_number_of_category_nodes=2, baseline_vigilance=0.95)
 
     starting_a_first_weight = fuzzy_artmap.weight_a[0, None].clone()
     starting_ab_first_weight = fuzzy_artmap.weight_ab[0, None].clone()
@@ -49,7 +49,7 @@ def test_fuzzy_artmap_selects_first_uncommited_node_with_wide_variance_input() -
 
 
 def test_fuzzy_artmap_predicts_training_value() -> None:
-    fuzzy_artmap = FuzzyArtMap(4, f2_size=2, rho_a_bar=0.95)
+    fuzzy_artmap = FuzzyArtMap(4, initial_number_of_category_nodes=2, baseline_vigilance=0.95)
     
     fuzzy_artmap.fit([training_in_value, training_out_value], [in_class, out_class])
     
@@ -61,7 +61,7 @@ def test_fuzzy_artmap_predicts_training_value() -> None:
 
 
 def test_fuzzy_artmap_predicts_training_value_with_membership() -> None:    
-    fuzzy_artmap = FuzzyArtMap(4, f2_size=2, rho_a_bar=0.95)
+    fuzzy_artmap = FuzzyArtMap(4, initial_number_of_category_nodes=2, baseline_vigilance=0.95)
     
     fuzzy_artmap.fit([training_in_value, training_out_value], [in_class, out_class])
 
@@ -84,7 +84,7 @@ def test_fuzzy_artmap_predicts_training_value_with_membership() -> None:
 
 def test_fuzzy_artmap_grows_nodes() -> None:
     
-    fuzzy_artmap = FuzzyArtMap(4, f2_size=1, rho_a_bar=0.95)
+    fuzzy_artmap = FuzzyArtMap(4, initial_number_of_category_nodes=1, baseline_vigilance=0.95)
 
     starting_weight_a_shape = fuzzy_artmap.weight_a.shape
     starting_weight_ab_shape = fuzzy_artmap.weight_ab.shape
@@ -106,7 +106,7 @@ def test_fuzzy_artmap_grows_nodes() -> None:
 
 def test_fuzzy_artmap_supports_max_nodes_mode() -> None:
     
-    fuzzy_artmap = FuzzyArtMap(4, f2_size=1, rho_a_bar=0.95, max_nodes=1)
+    fuzzy_artmap = FuzzyArtMap(4, initial_number_of_category_nodes=1, baseline_vigilance=0.95, max_nodes=1)
 
     starting_weight_a_shape = fuzzy_artmap.weight_a.shape
     starting_weight_ab_shape = fuzzy_artmap.weight_ab.shape
@@ -136,7 +136,7 @@ def test_fuzzy_artmap_supports_max_nodes_mode() -> None:
 
 
 def test_calculate_first_category_choice() -> None:
-    fuzzy_artmap = FuzzyArtMap(4, f2_size=1)
+    fuzzy_artmap = FuzzyArtMap(4, initial_number_of_category_nodes=1)
 
     # Number of F2 nodes
     expected_N = 1
@@ -155,3 +155,35 @@ def test_calculate_first_category_choice() -> None:
     assert torch.equal(S, expected_S)
     assert torch.equal(T, expected_T)
 
+
+def test_fuzzy_artmap_matches_expected_learning() -> None:
+    fuzzy_artmap = FuzzyArtMap(4, baseline_vigilance=0.9, initial_number_of_category_nodes=1)
+    first_point = tensor([[0.1, 0.1]])
+    complement_encoded_first_point = FuzzyArtMap.complement_encode(first_point)
+    fuzzy_artmap.fit([complement_encoded_first_point], [in_class])
+    assert torch.equal(fuzzy_artmap.weight_a, complement_encoded_first_point)
+    assert torch.equal(fuzzy_artmap.weight_ab, in_class)
+    
+    fifth_point = tensor([[0.11, 0.1]])
+    complement_encoded_fifth_point = FuzzyArtMap.complement_encode(fifth_point)
+    fuzzy_artmap.fit([complement_encoded_fifth_point], [in_class])
+    
+    assert torch.allclose(fuzzy_artmap.weight_a, tensor([[0.1000, 0.1000, 0.8925, 0.9000]]))
+    assert torch.equal(fuzzy_artmap.weight_ab, in_class)
+
+    sixth_point = tensor([[0.13, 0.1]])
+    complement_encoded_sixth_point = FuzzyArtMap.complement_encode(sixth_point)
+    fuzzy_artmap.fit([complement_encoded_sixth_point], [in_class])
+
+    assert torch.allclose(fuzzy_artmap.weight_a, tensor([[0.1000, 0.1000, 0.875625, 0.9000]]))
+    assert torch.equal(fuzzy_artmap.weight_ab, in_class)
+
+    seventh_point = tensor([[0.14, 0.1]])
+    complement_encoded_seventh_point = FuzzyArtMap.complement_encode(seventh_point)
+    fuzzy_artmap.fit([complement_encoded_seventh_point], [out_class])
+    assert torch.allclose(fuzzy_artmap.weight_a[0, None], tensor([[0.1000, 0.1000, 0.875625, 0.9000]]))
+    assert torch.equal(fuzzy_artmap.weight_ab[0, None], in_class)
+
+    assert torch.allclose(fuzzy_artmap.weight_a[1, None], tensor([[0.14, 0.1 , 0.86, 0.9 ]]))
+    assert torch.equal(fuzzy_artmap.weight_ab[1, None], out_class)
+    
