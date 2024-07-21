@@ -111,9 +111,9 @@ def test_fuzzy_artmap_supports_max_nodes_mode() -> None:
     starting_weight_a_shape = fuzzy_artmap.weight_a.shape
     starting_weight_ab_shape = fuzzy_artmap.weight_ab.shape
     starting_A_and_w_shape = fuzzy_artmap.A_and_w.shape
-    starting_rho_ab = fuzzy_artmap.rho_ab
-    starting_beta_ab = fuzzy_artmap.beta_ab
-    starting_rho_a_bar = fuzzy_artmap.rho_a_bar
+    starting_rho_ab = fuzzy_artmap.map_field_vigilance
+    starting_beta_ab = fuzzy_artmap.map_field_learning_rate
+    starting_rho_a_bar = fuzzy_artmap.baseline_vigilance
     
     fuzzy_artmap.fit([training_in_value, training_out_value, test_in_value, test_out_value], [in_class, out_class, in_class, out_class])
 
@@ -130,30 +130,32 @@ def test_fuzzy_artmap_supports_max_nodes_mode() -> None:
 
     # These values are specified in _resonance_search_vector
     # It is only important that they are less than the starting values.
-    assert fuzzy_artmap.rho_ab < starting_rho_ab
-    assert fuzzy_artmap.beta_ab < starting_beta_ab
-    assert fuzzy_artmap.rho_a_bar < starting_rho_a_bar
+    assert fuzzy_artmap.map_field_vigilance < starting_rho_ab
+    assert fuzzy_artmap.map_field_learning_rate < starting_beta_ab
+    assert fuzzy_artmap.baseline_vigilance < starting_rho_a_bar
 
 
 def test_calculate_first_category_choice() -> None:
     fuzzy_artmap = FuzzyArtMap(4, initial_number_of_category_nodes=1)
 
     # Number of F2 nodes
-    expected_N = 1
+    expected_number_of_f2_nodes = 1
 
     # |I ^ wj| - The L1 norm of the input min the weight, initial weights are initialized to the 1s vector
     # so I ^ wj -> I, therefore expected S is the sum of the values in the vector I
-    expected_S = torch.sum(training_in_value, 1)
+    category_choice_numerator = torch.sum(training_in_value, 1)
+
+    expected_match_function = category_choice_numerator / torch.sum(training_in_value, 1)
 
     # The category choice function is the S term divided by alpha + the l1 norm of the weight vector for
     # the category (wj) - since no learning has taken place yet, this is a ones vector
-    expected_T = expected_S / (fuzzy_artmap.alpha + torch.sum(torch.ones((1, 4)), 1))
+    expected_category_choice_function = category_choice_numerator / (fuzzy_artmap.choice_parameter + torch.sum(torch.ones((1, 4)), 1))
     
-    N, S, T = fuzzy_artmap._calculate_category_choice(training_in_value)
+    number_of_f2_nodes, match_function, category_choice_function = fuzzy_artmap._calculate_category_choice(training_in_value)
 
-    assert N == expected_N
-    assert torch.equal(S, expected_S)
-    assert torch.equal(T, expected_T)
+    assert number_of_f2_nodes == expected_number_of_f2_nodes
+    assert torch.equal(match_function, expected_match_function)
+    assert torch.equal(category_choice_function, expected_category_choice_function)
 
 
 def test_fuzzy_artmap_matches_expected_learning() -> None:

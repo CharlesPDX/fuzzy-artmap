@@ -30,14 +30,14 @@ def test_save_model():
 def test_load_model():
     try:
         test_parameters = {
-            "f1_size": 10,
-            "f2_size" : 20,
+            "input_vector_size": 10,
+            "initial_number_of_category_nodes" : 20,
             "number_of_labels": 4,
-            "beta": 0.95,
-            "beta_ab": 0.95,
-            "rho_ab": 0.99,
-            "rho_a_bar": 0.95,
-            "committed_beta": 0.6,
+            "learning_rate": 0.95,
+            "map_field_learning_rate": 0.95,
+            "map_field_vigilance": 0.99,
+            "baseline_vigilance": 0.95,
+            "committed_node_learning_rate": 0.6,
             "max_nodes": 20,
             "use_cuda_if_available": True,
             "debugging": True
@@ -62,7 +62,7 @@ def test_load_model():
         
         for parameter_name, parameter_value in reloaded_fam.parameters.items():
             # these parameters are overriden by the actual size of the weight_a tensor loaded from the model
-            if parameter_name in ["f1_size", "f2_size"]:
+            if parameter_name in ["input_vector_size", "number_of_category_nodes"]:
                 continue
             assert test_parameters[parameter_name] == parameter_value
             assert getattr(reloaded_fam, parameter_name) == test_parameters[parameter_name]

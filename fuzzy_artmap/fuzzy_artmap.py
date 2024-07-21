@@ -39,27 +39,27 @@ class FuzzyArtMap:
         committed_beta - the learning rate for nodes that have already been commited (see Fast-Commit Slow-Recode Option in Carpenter et al., 1992)
         debugging - Enables or disables bounds checking, and profiling; enabling may result in very poor execution time performance
         """
-        self.f1_size = input_vector_size
-        self.f2_size = initial_number_of_category_nodes
+        self.input_vector_size = input_vector_size
+        self.number_of_category_nodes = initial_number_of_category_nodes
         self.number_of_labels = number_of_labels
-        self.beta = learning_rate  
-        self.beta_ab = map_field_learning_rate 
-        self.rho_ab = map_field_vigilance
-        self.rho_a_bar = baseline_vigilance  # Baseline vigilance for ARTa, in range [0,1]
-        self.committed_beta = committed_node_learning_rate
+        self.learning_rate = learning_rate  
+        self.map_field_learning_rate = map_field_learning_rate 
+        self.map_field_vigilance = map_field_vigilance
+        self.baseline_vigilance = baseline_vigilance  # rho a bar for ARTa, in range [0,1]
+        self.committed_node_learning_rate = committed_node_learning_rate
         self.max_nodes = max_nodes
         self.use_cuda_if_available = use_cuda_if_available
         self.debugging = debugging
 
         self.parameters = {
-            "f1_size": self.f1_size,
-            "f2_size" : self.f2_size,
+            "input_vector_size": self.input_vector_size,
+            "number_of_category_nodes" : self.number_of_category_nodes,
             "number_of_labels": self.number_of_labels,
-            "beta": self.beta,
-            "beta_ab": self.beta_ab,
-            "rho_ab": self.rho_ab,
-            "rho_a_bar": self.rho_a_bar,
-            "committed_beta": self.committed_beta,
+            "learning_rate": self.learning_rate,
+            "map_field_learning_rate": self.map_field_learning_rate,
+            "map_field_vigilance": self.map_field_vigilance,
+            "baseline_vigilance": self.baseline_vigilance,
+            "committed_node_learning_rate": self.committed_node_learning_rate,
             "max_nodes": self.max_nodes,
             "use_cuda_if_available": self.use_cuda_if_available,
             "debugging": self.debugging
@@ -74,21 +74,21 @@ class FuzzyArtMap:
             self.device = torch.device("cpu")
             if self.use_cuda_if_available:
                 logger.warning("CUDA requested but not available, using CPU.")
-        self.range_validation_params = ["rho_a_bar", "committed_beta", "rho_ab", "beta"]
-        self.epsilon = 0.001        # Fab mismatch raises ARTa vigilance to this much above what is needed to reset ARTa
-        self.alpha = 0.001  # "Choice" parameter > 0. Set small for the conservative limit (Fuzzy AM paper, Sect.3)
+        self.range_validation_params = ["baseline_vigilance", "committed_node_learning_rate", "map_field_vigilance", "learning_rate"]
+        self.vigilance_refinement_step = 0.001 # Fab mismatch raises ARTa vigilance to this much above what is needed to reset ARTa
+        self.choice_parameter = 0.001 # alpha > 0. Set small for the conservative limit (Fuzzy AM paper, Sect.3)
         self.dtype = torch.float
         self.committed_nodes = set()
         self.updated_nodes = set()
         self.node_increase_step = 50 # number of F2 nodes to add when required
         self.number_of_increases = 0
-        self.weight_a = torch.ones((self.f2_size, self.f1_size), device=self.device, dtype=self.dtype)
-        self.input_vector_sum = self.f1_size / 2
-        self.weight_ab = torch.ones((self.f2_size, self.number_of_labels), device=self.device, dtype=self.dtype)
+        self.weight_a = torch.ones((self.number_of_category_nodes, self.input_vector_size), device=self.device, dtype=self.dtype)
+        self.input_vector_sum = self.input_vector_size / 2
+        self.weight_ab = torch.ones((self.number_of_category_nodes, self.number_of_labels), device=self.device, dtype=self.dtype)
         self.A_and_w = torch.empty(self.weight_a.shape, device=self.device, dtype=self.dtype)
         self.validated = False
 
-        logger.debug(f"f1_size: {self.f1_size}, f2_size:{self.f2_size}, committed beta = {self.committed_beta}")
+        logger.debug(f"f1_size: {self.input_vector_size}, f2_size:{self.number_of_category_nodes}, committed beta = {self.committed_node_learning_rate}")
 
     def _range_validation(self) -> None:
         for param_name in self.range_validation_params:
@@ -109,8 +109,8 @@ class FuzzyArtMap:
         has_nan = torch.any(torch.isnan(vector))
         assert not has_nan, f"{vector_name} contains one or more NaN values"
 
-        has_non_floating_point_values = torch.all(torch.is_floating_point(vector))
-        assert not has_non_floating_point_values, f"{vector_name} contains one or more non-floating point values"
+        has_floating_point_values = torch.is_floating_point(vector)
+        assert has_floating_point_values, f"{vector_name} contains one or more non-floating point values"
 
     def set_params(self, parameters: Dict[str, Any]) -> TFuzzyArtMap:
         for parameter, value in parameters.items():
@@ -127,53 +127,51 @@ class FuzzyArtMap:
             FuzzyArtMap._vector_validation(input_vector, "Input")
 
         resonant_a = False
-        N, S, T = self._calculate_category_choice(input_vector)
-        _, indices = torch.sort(T, stable=True, descending=True)
+        number_of_f2_nodes, match_function, category_choice_function = self._calculate_category_choice(input_vector)
+        indices = torch.argsort(category_choice_function, stable=True, descending=True)      
         
-        # This is the left-hand term of the resonance check equation (eq 7) for all categories
-        all_membership_degrees = S / self.input_vector_sum
-        T[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self.dtype, device=self.device)
+        category_choice_function[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self.dtype, device=self.device)
         has_evaluated_all_nodes = False
         while not resonant_a:
-            for J in indices:
-                if J.item() in already_reset_nodes:
+            for category_index in indices:
+                if category_index.item() in already_reset_nodes:
                     continue
 
                 # check for resonance (the full expression of eq 7)
-                if all_membership_degrees[J].item() >= rho_a or math.isclose(all_membership_degrees[J].item(), rho_a):
+                if match_function[category_index].item() >= rho_a or math.isclose(match_function[category_index].item(), rho_a):
                     resonant_a = True
                     break
                 else:
                     resonant_a = False
-                    already_reset_nodes.append(indices[J].item())
-                    T[indices[J].item()] = 0
+                    already_reset_nodes.append(indices[category_index].item())
+                    category_choice_function[indices[category_index].item()] = 0
 
             # Creating new nodes if we've reset all of them
             # or go into fixed node mode
-            if len(already_reset_nodes) >= N:
+            if len(already_reset_nodes) >= number_of_f2_nodes:
                 if has_evaluated_all_nodes:
                     raise RuntimeError(f"Resonance A search failed twice, ensure values are in range [0.0, 1.0]")
 
-                if self.max_nodes is None or self.max_nodes > (N + self.node_increase_step):
+                if self.max_nodes is None or self.max_nodes > (number_of_f2_nodes + self.node_increase_step):
                     self.weight_a = torch.vstack((self.weight_a, torch.ones((self.node_increase_step, self.weight_a.shape[1]), device=self.device, dtype=self.dtype)))
                     self.weight_ab = torch.vstack((self.weight_ab, torch.ones((self.node_increase_step, self.weight_ab.shape[1]), device=self.device, dtype=self.dtype)))
                     self.A_and_w = torch.vstack((self.A_and_w, torch.empty((self.node_increase_step, self.weight_a.shape[1]), device=self.device, dtype=self.dtype)))
                     self.number_of_increases += 1
                 else:
-                    self.rho_ab = 0
-                    self.beta_ab = 0.75
-                    self.rho_a_bar = 0
-                    rho_a = self.rho_a_bar
-                    logger.warning(f"Maximum number of nodes reached, {len(already_reset_nodes)} - adjusting rho_ab to {self.rho_ab} and beta_ab to {self.beta_ab}")
+                    self.map_field_vigilance = 0
+                    self.map_field_learning_rate = 0.75
+                    self.baseline_vigilance = 0
+                    rho_a = self.baseline_vigilance
+                    logger.warning(f"Maximum number of nodes reached, {len(already_reset_nodes)} - adjusting rho_ab to {self.map_field_vigilance} and beta_ab to {self.map_field_learning_rate}")
                     already_reset_nodes.clear()
+                
                 has_evaluated_all_nodes = True
-                N, S, T = self._calculate_category_choice(input_vector)
-                _, indices = torch.sort(T, stable=True, descending=True)
-                all_membership_degrees = S / self.input_vector_sum
-                T[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self.dtype, device=self.device)
+                number_of_f2_nodes, match_function, category_choice_function = self._calculate_category_choice(input_vector)
+                indices = torch.argsort(category_choice_function, stable=True, descending=True)
+                category_choice_function[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self.dtype, device=self.device)
                 
         # return the selected category index j and the degree of membership
-        return J.item(), all_membership_degrees[J].item()
+        return category_index.item(), match_function[category_index].item()
 
     def _calculate_category_choice(self, input_vector: torch.tensor) -> Tuple[int, torch.tensor, torch.tensor]:
         """
@@ -183,21 +181,24 @@ class FuzzyArtMap:
         See Carpenter et al. (1992) p.700 eq 2-4
         """
 
-        N = self.weight_a.shape[0]  # Count how many F2a nodes we have
+        number_of_f2_nodes = self.weight_a.shape[0]  # Count how many F2a nodes we have
 
         # This is the top/first term of the category choice function - I (the input vector) min weight j
         # except here it's done for all categories (j's)
-        torch.minimum(input_vector.repeat(N,1), self.weight_a, out=self.A_and_w) # Fuzzy AND = min
+        torch.minimum(input_vector.repeat(number_of_f2_nodes,1), self.weight_a, out=self.A_and_w) # Fuzzy AND = min
         
         # Calculate the L1 norm (eq 4), save this term since it's used for next to calculate T (the category choice value)
         # And for resonance/fuzzy membership
-        S = torch.sum(self.A_and_w, 1) # Row vector of signals to F2 nodes
-
-        T = S / (self.alpha + torch.sum(self.weight_a, 1)) # Choice function vector for F2
-        return N,S,T
+        category_choice_numerator = torch.sum(self.A_and_w, 1) # Row vector of signals to F2 nodes
+        
+        # This is the left-hand term of the resonance check equation (eq 7) for all categories
+        match_function = category_choice_numerator / self.input_vector_sum
+        
+        category_choice_function = category_choice_numerator / (self.choice_parameter + torch.sum(self.weight_a, 1)) # Choice function vector for F2
+        return number_of_f2_nodes, match_function, category_choice_function
 
     def _train(self, input_vector: torch.tensor, class_vector: torch.tensor) -> None:
-        rho_a = self.rho_a_bar # We start off with ARTa vigilance at baseline
+        rho_a = self.baseline_vigilance # We start off with ARTa vigilance at baseline
         resonant_ab = False # Not resonating in the Fab match layer
         already_reset_nodes = [] # We haven't rest any ARTa nodes for this input pattern yet, maintain list between resonance searches of Fa
         
@@ -210,28 +211,29 @@ class FuzzyArtMap:
 
         class_vector_sum = torch.sum(class_vector, 1)
         while not resonant_ab:            
-            J, x = self._resonance_search_vector(input_vector, already_reset_nodes, rho_a)
+            selected_category, match_function = self._resonance_search_vector(input_vector, already_reset_nodes, rho_a)
             
-            z = torch.minimum(class_vector, self.weight_ab[J, None])
+            map_field_activation = torch.minimum(class_vector, self.weight_ab[selected_category, None])
             
-            resonance = torch.sum(z, 1)/class_vector_sum
-            if resonance > self.rho_ab or math.isclose(resonance, self.rho_ab):
+            category_match_function = torch.sum(map_field_activation, 1)/class_vector_sum
+
+            if category_match_function > self.map_field_vigilance or math.isclose(category_match_function, self.map_field_vigilance):
                 resonant_ab = True
             else: 
-                already_reset_nodes.append(J)
-                rho_a = x + self.epsilon
+                already_reset_nodes.append(selected_category)
+                rho_a = match_function + self.vigilance_refinement_step
                 if rho_a > 1.0:
-                    rho_a = 1.0 - self.epsilon
+                    rho_a = 1.0 - self.vigilance_refinement_step
 
-        self.updated_nodes.add(str(J))
-        if J in self.committed_nodes:
-            beta = self.committed_beta
+        self.updated_nodes.add(str(selected_category))
+        if selected_category in self.committed_nodes:
+            learning_rate = self.committed_node_learning_rate
         else:
-            beta = self.beta
+            learning_rate = self.learning_rate
 
-        self.weight_a[J, None] = (beta * torch.minimum(input_vector, self.weight_a[J, None])) + ((1-beta) * self.weight_a[J, None])
-        self.weight_ab[J, None] = (self.beta_ab * z) + ((1-self.beta_ab) * self.weight_ab[J, None])
-        self.committed_nodes.add(J)
+        self.weight_a[selected_category, None] = (learning_rate * torch.minimum(input_vector, self.weight_a[selected_category, None])) + ((1-learning_rate) * self.weight_a[selected_category, None])
+        self.weight_ab[selected_category, None] = (self.map_field_learning_rate * map_field_activation) + ((1-self.map_field_learning_rate) * self.weight_ab[selected_category, None])
+        self.committed_nodes.add(selected_category)
 
     def fit(self, input_vectors: list[torch.tensor], class_vectors: list[torch.tensor]) -> None:
         if not self.validated and self.debugging:
@@ -286,9 +288,9 @@ class FuzzyArtMap:
 
         loaded_f1_size = weight_a.shape[1]
         loaded_f2_size = weight_a.shape[0]
-        logger.debug(f"Parameter f1: {parameters['f1_size']}, f2: {parameters['f2_size']} - Actual f1: {loaded_f1_size}, f2: {loaded_f2_size}")
-        parameters["f1_size"] = weight_a.shape[1]
-        parameters["f2_size"] = weight_a.shape[0]
+        logger.debug(f"Parameter f1: {parameters['input_vector_size']}, f2: {parameters['number_of_category_nodes']} - Actual f1: {loaded_f1_size}, f2: {loaded_f2_size}")
+        parameters["input_vector_size"] = weight_a.shape[1]
+        parameters["number_of_category_nodes"] = weight_a.shape[0]
         self.set_params(parameters)
         
         self.weight_a = weight_a
