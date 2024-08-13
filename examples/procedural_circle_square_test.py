@@ -1,15 +1,13 @@
 import os, sys
 dir2 = os.path.abspath('')
-dir1 = os.path.dirname(dir2)
-if not dir1 in sys.path: 
-    sys.path.append(dir1)
+if not dir2 in sys.path: 
+    sys.path.append(dir2)
 from math import sqrt
 from collections import Counter
 from datetime import datetime
 import traceback
 
 import numpy as np
-import tornado
 
 from fuzzy_artmap.procedural_fuzzy_artmap import FuzzyArtMap
 
