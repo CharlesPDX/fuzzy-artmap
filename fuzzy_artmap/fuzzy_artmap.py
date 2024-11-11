@@ -19,8 +19,9 @@ class FuzzyArtMap(BaseEstimator):
     _validated = False
     _device = None
     _input_vector_size: int
-    _number_of_category_nodes: int
+    number_of_category_nodes: int
     _number_of_labels: int
+    _choice_parameter = 0.001 # alpha > 0. Set small for the conservative limit (Fuzzy AM paper, Sect.3)
     def __init__(self,
                  baseline_vigilance: float = 0.0,
                  learning_rate: float = 1.0,
@@ -30,7 +31,9 @@ class FuzzyArtMap(BaseEstimator):
                  committed_node_learning_rate: float = 0.75,
                  use_cuda_if_available: bool = False,
                  debugging: bool = False,
-                 auto_normalize: bool = False,
+                 auto_scale: bool = False,
+                 auto_complement_encode: bool = False,
+                 number_of_category_nodes = 10,
                  ):
         """
         Initialize Fuzzy ARTMAP instance
@@ -54,7 +57,9 @@ class FuzzyArtMap(BaseEstimator):
         self.max_nodes = max_nodes
         self.use_cuda_if_available = use_cuda_if_available
         self.debugging = debugging
-        self.auto_normalize = auto_normalize
+        self.auto_scale = auto_scale
+        self.auto_complement_encode = auto_complement_encode
+        self.number_of_category_nodes = number_of_category_nodes
 
 
     def _set_defaults(self) -> None:
@@ -66,19 +71,19 @@ class FuzzyArtMap(BaseEstimator):
                 logger.warning("CUDA requested but not available, using CPU.")
         self._range_validation_params = ["baseline_vigilance", "committed_node_learning_rate", "map_field_vigilance", "learning_rate"]
         self._vigilance_refinement_step = 0.001 # Fab mismatch raises ARTa vigilance to this much above what is needed to reset ARTa
-        self._choice_parameter = 0.001 # alpha > 0. Set small for the conservative limit (Fuzzy AM paper, Sect.3)
+        
         self._dtype = torch.float
         self._committed_nodes = set()
         self._updated_nodes = set()
         self._node_increase_step = 50 # number of F2 nodes to add when required
         self._number_of_increases = 0
-        self._weight_a = torch.ones((self._number_of_category_nodes, self._input_vector_size), device=self._device, dtype=self._dtype)
+        self._weight_a = torch.ones((self.number_of_category_nodes, self._input_vector_size), device=self._device, dtype=self._dtype)
         self._input_vector_sum = self._input_vector_size / 2
-        self._weight_ab = torch.ones((self._number_of_category_nodes, self._number_of_labels), device=self._device, dtype=self._dtype)
+        self._weight_ab = torch.ones((self.number_of_category_nodes, self._number_of_labels), device=self._device, dtype=self._dtype)
         self._A_and_w = torch.empty(self._weight_a.shape, device=self._device, dtype=self._dtype)
         self._validated = False
 
-        logger.debug(f"f1_size: {self._input_vector_size}, f2_size:{self._number_of_category_nodes}, committed beta = {self.committed_node_learning_rate}")
+        logger.debug(f"f1_size: {self._input_vector_size}, f2_size:{self.number_of_category_nodes}, committed beta = {self.committed_node_learning_rate}")
 
     def _range_validation(self) -> None:
         for param_name in self._range_validation_params:
@@ -88,24 +93,21 @@ class FuzzyArtMap(BaseEstimator):
 
     @staticmethod
     def _vector_validation(vector: torch.Tensor, vector_name: str) -> None:
-        try:
-            assert len(vector) == 1 or vector.shape[0] == 1, f"{vector_name} is not a 1d vector, {vector.shape}"
+        assert len(vector) == 1 or vector.shape[0] == 1, f"{vector_name} is not a 1d vector, {vector.shape}"
 
-            any_value_over_one = (vector > 1.0).any()
-            assert not any_value_over_one.item(), f"{vector_name} vector contains one or more values greater than 1.0"
-            
-            any_value_below_zero = (vector < 0.0).any()
-            assert not any_value_below_zero.item(), f"{vector_name} vector contains one or more values less than 0.0"
+        any_value_over_one = (vector > 1.0).any()
+        assert not any_value_over_one.item(), f"{vector_name} vector contains one or more values greater than 1.0"
+        
+        any_value_below_zero = (vector < 0.0).any()
+        assert not any_value_below_zero.item(), f"{vector_name} vector contains one or more values less than 0.0"
 
-            has_nan = torch.any(torch.isnan(vector))
-            assert not has_nan, f"{vector_name} contains one or more NaN values"
+        has_nan = torch.any(torch.isnan(vector))
+        assert not has_nan, f"{vector_name} contains one or more NaN values"
 
-            has_floating_point_values = torch.is_floating_point(vector)
-            assert has_floating_point_values, f"{vector_name} contains one or more non-floating point values"
-        except AssertionError as e:
-            print("")
+        has_floating_point_values = torch.is_floating_point(vector)
+        assert has_floating_point_values, f"{vector_name} contains one or more non-floating point values"
 
-    def set_params(self, **parameters) -> Self:
+    def set_params(self, parameters) -> Self:
         for parameter, value in parameters.items():
             setattr(self, parameter, value)
         return self
@@ -113,7 +115,7 @@ class FuzzyArtMap(BaseEstimator):
     def get_params(self, deep: bool=True) -> Dict[str, Any]:
         return {
             # "input_vector_size": self.input_vector_size,
-            # "number_of_category_nodes" : self.number_of_category_nodes,
+            "number_of_category_nodes" : self.number_of_category_nodes,
             # "number_of_labels": self.number_of_labels,
             "learning_rate": self.learning_rate,
             "map_field_learning_rate": self.map_field_learning_rate,
@@ -123,7 +125,8 @@ class FuzzyArtMap(BaseEstimator):
             "max_nodes": self.max_nodes,
             "use_cuda_if_available": self.use_cuda_if_available,
             "debugging": self.debugging,
-            "auto_normalize": self.auto_normalize,
+            "auto_complement_encode": self.auto_complement_encode,
+            "auto_scale": self.auto_scale,
         }
 
     def _resonance_search_vector(self, input_vector: torch.Tensor, already_reset_nodes: List[int], rho_a: float) -> Tuple[int, float]:
@@ -240,42 +243,48 @@ class FuzzyArtMap(BaseEstimator):
         self._committed_nodes.add(selected_category)
 
     def fit(self, X: npt.ArrayLike, y: npt.ArrayLike) -> Self:
-        X, y= self._validate_data(X, y, accept_sparse=False, accept_large_sparse=False)
+        if self.auto_complement_encode:
+            X, y= self._validate_data(X, y, accept_sparse=False, accept_large_sparse=False)
         
         if X.shape[0] != y.shape[0]:
             raise ValueError(f"Length of samples tensor (X)-{X.shape[0]} does not equal length of labels tensor (y)-{y.shape[0]}")
 
-        if self.auto_normalize:
-            X = self.normalize_samples(X)
-            y = self.normalize_labels(y)
+        if self.auto_scale:
+            X = self.scale_samples(X)
+            y = self.scale_labels(y)
+
+        if self.auto_complement_encode:
+            if not isinstance(X, torch.Tensor):
+                X = torch.from_numpy(np.array(X))
+            X = FuzzyArtMap.complement_encode(X)
+            if not isinstance(y, torch.Tensor):
+                y = torch.from_numpy(np.array(y))
+            y = FuzzyArtMap.complement_encode(y)
 
         if not self._validated:
             self._input_vector_size = X.shape[1]
             self._number_of_labels = y.shape[1]
-            self._number_of_category_nodes = int(self._input_vector_size * .1)
             
             self._set_defaults()
             self._range_validation()
             self._validated = True
 
         for vector_index, input_vector in enumerate(X):
-            print(vector_index)
-            print(input_vector)
             self._train(input_vector.unsqueeze_(0), y[vector_index].unsqueeze_(0))
         
         logger.debug(f"training updated: {','.join(self._updated_nodes)}")
         self._updated_nodes.clear()
         return self
 
-    def normalize_samples(self, samples: npt.ArrayLike) -> npt.ArrayLike:
+    def scale_samples(self, samples: npt.ArrayLike) -> npt.ArrayLike:
         scaler = MinMaxScaler()
         samples = scaler.fit_transform(samples)
         samples = np.clip(samples, 0.0, 1.0)
         if not isinstance(samples, torch.Tensor):
             samples = torch.from_numpy(np.array(samples))
-        return FuzzyArtMap.complement_encode(samples)
+        return samples
     
-    def normalize_labels(self, labels: npt.ArrayLike) -> npt.ArrayLike:
+    def scale_labels(self, labels: npt.ArrayLike) -> npt.ArrayLike:
         if len(labels.shape) == 1:
             labels = labels.reshape(-1,1)
         if np.any(np.vectorize(lambda x: isinstance(x, str))(labels)):
@@ -286,8 +295,7 @@ class FuzzyArtMap(BaseEstimator):
         labels = np.clip(labels, 0.0, 1.0)
         if not isinstance(labels, torch.Tensor):
             labels = torch.from_numpy(np.array(labels))
-
-        return FuzzyArtMap.complement_encode(labels)
+        return labels
 
     @staticmethod
     def complement_encode(original_vector: torch.Tensor, debug: bool = False) -> torch.Tensor:
@@ -297,14 +305,17 @@ class FuzzyArtMap(BaseEstimator):
         complement_encoded_value = torch.hstack((original_vector, complement))
         return complement_encoded_value
 
-    def predict(self, X: npt.ArrayLike) -> torch.Tensor:
+    def predict(self, X: npt.ArrayLike) -> npt.ArrayLike:
         rho_a = 0 # set ARTa vigilance to first match
-        X = self._validate_data(X, accept_sparse=False, accept_large_sparse=False)
-        if self.auto_normalize:
-            X = self.normalize_samples(X)
+        if self.auto_complement_encode:
+            X = self._validate_data(X, accept_sparse=False, accept_large_sparse=False)
+        
+        if self.auto_scale:
+            X = self.scale_samples(X)
+        if self.auto_complement_encode:
+            X = FuzzyArtMap.complement_encode(X)
         results = []
         for input_vector in X:
-            print(input_vector)
             J, _ = self._resonance_search_vector(input_vector.unsqueeze_(0), [], rho_a)
             # (Called x_ab in Fuzzy ARTMAP paper)
             results.append(torch.asarray(self._weight_ab[J, None])) # Fab activation vector
@@ -336,7 +347,7 @@ class FuzzyArtMap(BaseEstimator):
 
         loaded_f1_size = weight_a.shape[1]
         loaded_f2_size = weight_a.shape[0]
-        logger.debug(f"Parameter f1: {parameters['input_vector_size']}, f2: {parameters['number_of_category_nodes']} - Actual f1: {loaded_f1_size}, f2: {loaded_f2_size}")
+        logger.debug(f"Parameter f2: {parameters['number_of_category_nodes']} - Actual f1: {loaded_f1_size}, f2: {loaded_f2_size}")
         parameters["input_vector_size"] = weight_a.shape[1]
         parameters["number_of_category_nodes"] = weight_a.shape[0]
         self.set_params(parameters)

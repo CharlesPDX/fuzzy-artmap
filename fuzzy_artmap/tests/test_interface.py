@@ -6,7 +6,7 @@ from fuzzy_artmap.fuzzy_artmap import FuzzyArtMap
 
 
 def test_fuzzy_artmap_scikit_estimator_interface() -> None:
-    estimator = FuzzyArtMap(debugging=True, auto_normalize=True)
+    estimator = FuzzyArtMap(debugging=True, auto_scale=True, auto_complement_encode=True)
     # check_estimator(estimator)
     expected_failures = {"check_methods_subset_invariance": "auto-normalization applied", "check_fit_idempotent": "auto-normalization applied"}
     checks = check_estimator(estimator, generate_only=True)
