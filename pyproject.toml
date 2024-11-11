@@ -10,12 +10,12 @@ readme = "README.md"
 authors = [{ name = "Charles Courchaine", email = "fuzzyartmap@charles.courchaine.dev" }]
 keywords = ["fuzzy", "artmap", "art", "adaptive", "resonance", "theory"]
 dependencies = [
-    "torch"
+    "torch", "numpy < 2"
 ]
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-dev = ["matplotlib", "ipympl", "pytest"]
+dev = ["matplotlib", "ipympl", "pytest", "scikit-learn "]
 
 [project.urls]
 Homepage = "https://github.com/CharlesPDX/fuzzy-artmap"

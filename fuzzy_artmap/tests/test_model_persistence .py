@@ -7,16 +7,16 @@ from fuzzy_artmap.fuzzy_artmap import FuzzyArtMap
 
 
 def test_save_model():
-    fam = FuzzyArtMap(4)
+    fam = FuzzyArtMap()
     descriptor = "a-:b.c"
     with patch("torch.save") as mock_torch_save:
         saved_location = fam.save_model(descriptor)
         mock_torch_save.assert_called_once()
         assert len(mock_torch_save.call_args[0][0]) == 4
 
-        assert mock_torch_save.call_args[0][0][0] is fam.weight_a
-        assert mock_torch_save.call_args[0][0][1] is fam.weight_ab
-        assert mock_torch_save.call_args[0][0][2] is fam.committed_nodes
+        assert mock_torch_save.call_args[0][0][0] is fam._weight_a
+        assert mock_torch_save.call_args[0][0][1] is fam._weight_ab
+        assert mock_torch_save.call_args[0][0][2] is fam._committed_nodes
         assert mock_torch_save.call_args[0][0][3] is fam.parameters
 
         cleaned_descriptor = "a__b_c"
@@ -31,7 +31,7 @@ def test_load_model():
     try:
         test_parameters = {
             "input_vector_size": 10,
-            "initial_number_of_category_nodes" : 20,
+            "number_of_category_nodes" : 20,
             "number_of_labels": 4,
             "learning_rate": 0.95,
             "map_field_learning_rate": 0.95,
@@ -44,19 +44,19 @@ def test_load_model():
         }
         fam = FuzzyArtMap(**test_parameters)
         committed_node = 1
-        fam.committed_nodes.add(committed_node)
+        fam._committed_nodes.add(committed_node)
         test_a = torch.rand((2,2))
         test_ab = torch.rand((2,2))
-        fam.weight_a = test_a
-        fam.weight_ab = test_ab
+        fam._weight_a = test_a
+        fam._weight_ab = test_ab
 
         # easier to save off the model rather than fake a buffer
         saved_location = fam.save_model(path_prefix=None)        
         fam = FuzzyArtMap(4)
 
         # validate that these have been reset by the previous assignment
-        assert test_a.shape != fam.weight_a
-        assert test_ab.shape != fam.weight_ab
+        assert test_a.shape != fam._weight_a
+        assert test_ab.shape != fam._weight_ab
 
         reloaded_fam = fam.load_model(saved_location)
         
@@ -67,11 +67,11 @@ def test_load_model():
             assert test_parameters[parameter_name] == parameter_value
             assert getattr(reloaded_fam, parameter_name) == test_parameters[parameter_name]
         
-        assert len(reloaded_fam.committed_nodes) == 1
-        assert committed_node in reloaded_fam.committed_nodes
+        assert len(reloaded_fam._committed_nodes) == 1
+        assert committed_node in reloaded_fam._committed_nodes
 
-        assert torch.all(torch.eq(test_a, reloaded_fam.weight_a))
-        assert torch.all(torch.eq(test_ab, reloaded_fam.weight_ab))
+        assert torch.all(torch.eq(test_a, reloaded_fam._weight_a))
+        assert torch.all(torch.eq(test_ab, reloaded_fam._weight_ab))
 
     finally:
         # cleanup saved model
