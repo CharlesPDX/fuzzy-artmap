@@ -1,12 +1,12 @@
 import pytest
-import numpy as np
+import torch
 
 from fuzzy_artmap.fuzzy_artmap import FuzzyArtMap
 
 
 def test_range_validation() -> None:
-    fuzzy_artmap = FuzzyArtMap()
-    fuzzy_artmap.fit(np.array([[1,0]]), np.array([[1,0]]))
+    fuzzy_artmap = FuzzyArtMap(auto_complement_encode=True, auto_scale=True)
+    fuzzy_artmap.fit([[1]], [[1]])
     for param in fuzzy_artmap._range_validation_params:
         # Test param too low < 0.0
         setattr(fuzzy_artmap, param, -1.1)
@@ -21,11 +21,11 @@ def test_range_validation() -> None:
 
 
 def test_vector_validation() -> None:
-    over_sized_vector = np.array([[0.5, 1.2, 0.8],[1.5, 0.7, 0.9]])
-    vector_greater_than_one = np.array([[0.5, 1.2, 0.8]])
-    vector_less_than_zero  = np.array([[0.5, 0.2, -0.1]])
-    nan_vector = np.array([[0.5, 1.0, float("nan")]])
-    plain_vector = np.array([[0.5, 0.2, 0.1]])
+    over_sized_vector = torch.tensor([[0.5, 1.2, 0.8],[1.5, 0.7, 0.9]])
+    vector_greater_than_one = torch.tensor([[0.5, 1.2, 0.8]])
+    vector_less_than_zero  = torch.tensor([[0.5, 0.2, -0.1]])
+    nan_vector = torch.tensor([[0.5, 1.0, float("nan")]])
+    plain_vector = torch.tensor([[0.5, 0.2, 0.1]])
     
     with pytest.raises(AssertionError):
         FuzzyArtMap._vector_validation(over_sized_vector, "oversized")
@@ -46,13 +46,13 @@ def test_vector_validation() -> None:
 
 
 def test_complement_encoding() -> None:
-    test_vector = np.array([[0.5, 0.2, 0.1]])
-    expected_vector = np.array([[0.5, 0.2, 0.1, 0.5, 0.8, 0.9]])
+    test_vector = torch.tensor([[0.5, 0.2, 0.1]])
+    expected_vector = torch.tensor([[0.5, 0.2, 0.1, 0.5, 0.8, 0.9]])
     actual_vector = FuzzyArtMap.complement_encode(test_vector)
-    assert np.array_equal(expected_vector, actual_vector)
+    assert torch.equal(expected_vector, actual_vector)
 
 
 def test_complement_encoding_debug_raises() -> None:
-    over_sized_vector = np.array([[0.5, 1.2, 0.8],[1.5, 0.7, 0.9]])
+    over_sized_vector = torch.tensor([[0.5, 1.2, 0.8],[1.5, 0.7, 0.9]])
     with pytest.raises(AssertionError):
         FuzzyArtMap.complement_encode(over_sized_vector, True)

@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import numpy as np
+import torch
 
 from fuzzy_artmap.fuzzy_artmap import FuzzyArtMap
 
@@ -12,22 +12,22 @@ def test_save_model():
     fam._number_of_labels = 2
     fam._set_defaults()
     descriptor = "a-:b.c"
-    with patch("numpy.savez_compressed") as mock_torch_save:
+    with patch("torch.save") as mock_torch_save:
         saved_location = fam.save_model(descriptor)
         mock_torch_save.assert_called_once()
-        assert len(mock_torch_save.call_args[1]) == 4
+        assert len(mock_torch_save.call_args[0][0]) == 4
 
-        assert mock_torch_save.call_args[1]["weight_a"] is fam._weight_a
-        assert mock_torch_save.call_args[1]["weight_ab"] is fam._weight_ab
-        assert mock_torch_save.call_args[1]["committed_nodes"] is fam._committed_nodes
-        assert mock_torch_save.call_args[1]["parameters"] == fam.get_params()
+        assert mock_torch_save.call_args[0][0][0] is fam._weight_a
+        assert mock_torch_save.call_args[0][0][1] is fam._weight_ab
+        assert mock_torch_save.call_args[0][0][2] is fam._committed_nodes
+        assert mock_torch_save.call_args[0][0][3] == fam.get_params()
 
         cleaned_descriptor = "a__b_c"
         assert cleaned_descriptor in saved_location
         assert "fam_" in saved_location
-        assert saved_location[-4:] == ".npz"
+        assert saved_location[-3:] == ".pt"
         for character in ["-", ":", "."]:
-            assert character not in saved_location[:-4]
+            assert character not in saved_location[:-3]
 
 
 def test_load_model():
@@ -40,6 +40,7 @@ def test_load_model():
             "baseline_vigilance": 0.95,
             "committed_node_learning_rate": 0.6,
             "max_nodes": 20,
+            "use_cuda_if_available": True,
             "debugging": True,
             "auto_complement_encode": True,
             "auto_scale": True,
@@ -51,8 +52,8 @@ def test_load_model():
 
         committed_node = 1
         fam._committed_nodes.add(committed_node)
-        test_a = np.random.random((2,2))
-        test_ab = np.random.random((2,2))
+        test_a = torch.rand((2,2))
+        test_ab = torch.rand((2,2))
         fam._weight_a = test_a
         fam._weight_ab = test_ab
 
@@ -63,8 +64,8 @@ def test_load_model():
         fam._number_of_labels = 2
         fam._set_defaults()
         # validate that these have been reset by the previous assignment
-        assert test_a.shape != fam._weight_a.shape
-        assert test_ab.shape != fam._weight_ab.shape
+        assert test_a.shape != fam._weight_a
+        assert test_ab.shape != fam._weight_ab
 
         reloaded_fam = fam.load_model(saved_location)
         
@@ -78,8 +79,8 @@ def test_load_model():
         assert len(reloaded_fam._committed_nodes) == 1
         assert committed_node in reloaded_fam._committed_nodes
 
-        assert np.all(np.array_equal(test_a, reloaded_fam._weight_a))
-        assert np.all(np.array_equal(test_ab, reloaded_fam._weight_ab))
+        assert torch.all(torch.eq(test_a, reloaded_fam._weight_a))
+        assert torch.all(torch.eq(test_ab, reloaded_fam._weight_ab))
 
     finally:
         # cleanup saved model
