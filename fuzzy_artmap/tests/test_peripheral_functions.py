@@ -5,8 +5,9 @@ from fuzzy_artmap.fuzzy_artmap import FuzzyArtMap
 
 
 def test_range_validation() -> None:
-    fuzzy_artmap = FuzzyArtMap(10)
-    for param in fuzzy_artmap.range_validation_params:
+    fuzzy_artmap = FuzzyArtMap(auto_complement_encode=True, auto_scale=True)
+    fuzzy_artmap.fit([[1]], [[1]])
+    for param in fuzzy_artmap._range_validation_params:
         # Test param too low < 0.0
         setattr(fuzzy_artmap, param, -1.1)
         with pytest.raises(ValueError):

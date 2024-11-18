@@ -16,7 +16,7 @@ logging.basicConfig(level = logging.INFO, format = '%(asctime)s - %(name)s - %(l
 LOGGER = logging.getLogger(__name__)
 
 num_pats = 1000
-test_pats = 100
+test_pats = 1_000
 sq = 1;                         # Size of square
 r = sq/sqrt(2*np.pi);              # Radius of circle so it's half area of square
 xcent = 0.5

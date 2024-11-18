@@ -46,14 +46,14 @@ def get_traceback_string(e: Exception):
 
 
 def main():
-    x = FuzzyArtMap(4, 1, baseline_vigilance = 0.0)
+    x = FuzzyArtMap(baseline_vigilance = 0.0)
     start_time = datetime.now()
     print(start_time)
     for i in range(number_of_training_patterns):
         test_input = torch.transpose(a[:, i, None], 0, 1)
         ground_truth = torch.transpose(bmat[:, i, None], 0, 1)
         complement_encoded_input = FuzzyArtMap.complement_encode(test_input)
-        x.fit([complement_encoded_input], [ground_truth])
+        x.fit(complement_encoded_input, ground_truth)
 
     out_test_point = torch.tensor(([0.115, 0.948],))
     encoded_test_point = FuzzyArtMap.complement_encode(out_test_point)
@@ -70,7 +70,7 @@ def main():
         test_input = torch.transpose(test_set[:, i, None], 0, 1)
         ground_truth = torch.transpose(test_truth[:, i, None], 0, 1)
         complement_encoded_input = FuzzyArtMap.complement_encode(test_input)        
-        prediction = x.predict(complement_encoded_input)
+        prediction = torch.from_numpy(x.predict(complement_encoded_input))[0]
         correct = torch.all(prediction == ground_truth).item()
         test_predictions.update([correct])
     stop_time = datetime.now()
