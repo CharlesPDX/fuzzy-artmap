@@ -44,6 +44,10 @@ def test_load_model():
             "debugging": True,
             "auto_complement_encode": True,
             "auto_scale": True,
+            "vigilance_refinement_step": 0.2,
+            "online_learning": False,
+            "choice_parameter": 0.1,
+            "node_increase_step": 2,
         }
         fam = FuzzyArtMap(**test_parameters)
         fam._input_vector_size = 4
