@@ -42,7 +42,7 @@ class FuzzyArtMap(BaseEstimator):
         """
         Parameters
         ----------
-        # Primary parameters - The primary parameters are `baseline_vigilance` and `learning_rate`, the other parameters are provided as an interface to experiment
+        Primary parameters - The primary parameters are `baseline_vigilance` and `learning_rate`, the other parameters are provided as an interface to experiment
         and fine-tune the algorithm as necessary.
 
         baseline_vigilance: float = 0.0
@@ -51,7 +51,8 @@ class FuzzyArtMap(BaseEstimator):
         learning_rate: float = 1.0
             How fast the network should learn, 1.0 for fast learning, 0.0 for no learning, called beta in Carpenter et al. (1992)
         
-        # These are additional refinement parameters
+        These are additional refinement parameters
+        
         committed_node_learning_rate: float = 0.75
             The slow recode learning rate, once a category is selected (see fast learning slow recode in Carpenter et al. (1992))
     
@@ -69,7 +70,7 @@ class FuzzyArtMap(BaseEstimator):
             The initial number of coding category nodes (F2) - this will automatically grow up to max_nodes, unlimited if None
     
 
-        # These should rarely if ever need to be modified from default
+        These should rarely if ever need to be modified from default
 
         choice_parameter: float = 0.001
             Sets the degree of differentiation to choose between categories, must be greater than zero. 
@@ -79,7 +80,8 @@ class FuzzyArtMap(BaseEstimator):
             When there is a category mismatch, how much to raise the vigilance parameter (rho_a, when there's an F_ab mismatch/category reset)
     
 
-        # Diagnostic, performance, and testing parameters
+        Diagnostic, performance, and testing parameters
+        
         node_increase_step = 50
             The number of category (F2) nodes to add when required.
             This is primarily a performance tweak, by allowing fewer memory allocations.
@@ -158,10 +160,12 @@ class FuzzyArtMap(BaseEstimator):
         - all values are in the [0.0, 1.0] interval
         - all are not NaN
         - all are floating point
+        
         Parameters
         ----------
         vector: torch.Tensor
             The vector to validate
+        
         vector_name: str
             The name of the vector, to make the error messages better
 
@@ -185,6 +189,7 @@ class FuzzyArtMap(BaseEstimator):
         assert has_floating_point_values, f"{vector_name} contains one or more non-floating point values"
 
     def set_params(self, **parameters) -> Self:
+        """For scikit-learn, to set paramters"""
         for parameter, value in parameters.items():
             setattr(self, parameter, value)
         return self
@@ -216,8 +221,10 @@ class FuzzyArtMap(BaseEstimator):
         ----------
         input_vector: torch.Tensor
             The current input to match against 
+        
         already_reset_nodes: list[int]
             The indexes of of nodes that have already been selected and not matched
+        
         rho_a: float
             The current vigilance paramter
         
@@ -321,11 +328,14 @@ class FuzzyArtMap(BaseEstimator):
         return number_of_f2_nodes, match_function, category_choice_function
 
     def _train(self, input_vector: torch.Tensor, class_vector: torch.Tensor) -> None:
-        """Internal training method that updates the weights between F1 & F2 and F2 and the Map Field
+        """
+        Internal training method that updates the weights between F1 & F2 and F2 and the Map Field
+        
         Parameters
         ----------
         input_vector: torch.Tensor
             The current input to train on
+        
         class_vector: torch.Tensor
             The ground truth label for the current input
         
@@ -373,11 +383,14 @@ class FuzzyArtMap(BaseEstimator):
         self._committed_nodes.add(selected_category)
 
     def fit(self, X: npt.ArrayLike, y: npt.ArrayLike) -> Self:
-        """Trains the model with the examples in `X` to the labels in `y`
+        """
+        Trains the model with the examples in `X` to the labels in `y`
+
         Parameters
         ----------
         X: npt.ArrayLike
             If `auto_complement_encode` is not set, this should be a `torch.Tensor` - the values to train on
+
         y: npt.ArrayLike
             If `auto_complement_encode` is not set, this should be a `torch.Tensor` - the labels to associate with the training values
             If `auto_scale` is set, categorical/string labels will be auto converted to numeric values
@@ -389,7 +402,7 @@ class FuzzyArtMap(BaseEstimator):
         Notes
         -----
         Having `auto_complement_encode` or `auto_scale` will modify `X` and `y`.
-        Setting `online_learning` to `False` will cause the model to be reset with every training iteration.
+        Setting `online_learning` to `False` will cause the model to be reset with every call to `fit`.
         """
         if self.auto_complement_encode:
             X, y= self._validate_data(X, y, accept_sparse=False, accept_large_sparse=False)
@@ -454,11 +467,13 @@ class FuzzyArtMap(BaseEstimator):
 
     @staticmethod
     def complement_encode(original_vector: torch.Tensor, debug: bool = False) -> torch.Tensor:
-        """Complement encode a vector
+        """
+        Complement encode a vector
+
         Parameters
         ----------
         original_vector: torch.Tensor
-            The input to complement encode
+            The value to complement encode
         
         debug: bool = False
             Validate the `original_vector` to make sure it meets Fuzzy ARTMAP requirements
@@ -479,11 +494,14 @@ class FuzzyArtMap(BaseEstimator):
         return complement_encoded_value
 
     def predict(self, X: npt.ArrayLike) -> npt.NDArray:
-        """Predict the class associated with `X`
+        """
+        Predict the class associated with `X`
+        
         Parameters
         ----------
         X: npt.ArrayLike
-            If `auto_scale` is set, values in `X` will automatically be scaled to the [0.0, 1.0] interval
+            If `auto_scale` is set, values in `X` will automatically be scaled to the [0.0, 1.0] interval.
+            
             If `auto_complement_encode` is not set, this should be a `torch.Tensor`, if it is set, `npt.ArrayLike` is 
             acceptable, and will be automatically run through `complement_encode`
         
@@ -508,7 +526,9 @@ class FuzzyArtMap(BaseEstimator):
         return np.array(results)
 
     def predict_with_membership(self, input_vector: torch.Tensor) -> tuple[torch.Tensor, float]:
-        """Predict the class associated with `input_vector`
+        """
+        Predict the class associated with `input_vector`
+        
         Parameters
         ----------
         input_vector: torch.Tensor
@@ -522,7 +542,7 @@ class FuzzyArtMap(BaseEstimator):
         
         Notes
         -----
-        Membership is the Fuzzy Membership 
+        Membership is the Fuzzy Set Membership 
         """
         rho_a = 0 # set ARTa vigilance to first match
         J, membership_degree = self._resonance_search_vector(input_vector, [], rho_a)
@@ -531,11 +551,14 @@ class FuzzyArtMap(BaseEstimator):
         return self._weight_ab[J, None], membership_degree # Fab activation vector & fuzzy membership value
 
     def save_model(self, descriptor: str = None, path_prefix: str = "models") -> str:
-        """Saves the current model and parameters to disk
+        """
+        Saves the current model and parameters to disk
+        
         Parameters
         ----------
         descriptor: str = None
             Optional descriptor to include in the filename
+        
         path_prefix: str = "models"
             Optional prefix of where to save the model
 
@@ -555,7 +578,9 @@ class FuzzyArtMap(BaseEstimator):
         return model_path
     
     def load_model(self, model_path: str) -> Self:
-        """Loads the model and parameters from the specified `model_path` into the current instance.
+        """
+        Loads the model and parameters from the specified `model_path` into the current instance.
+        
         Paramters
         ---------
         model_path: str
@@ -563,7 +588,7 @@ class FuzzyArtMap(BaseEstimator):
         
         Returns
         -------
-        The current instance, with the updated values
+        The current FuzzyArtMap instance, with the updated values from the loaded model
         """
         if not Path(model_path).is_file():
             raise FileNotFoundError(f"`{model_path}` was not found or is a directory")
@@ -585,7 +610,8 @@ class FuzzyArtMap(BaseEstimator):
         return self
     
     def get_number_of_nodes(self) -> int:
-        """Helper method to get the number of nodes in the model.
+        """
+        Helper method to get the number of nodes in the model.
         
         Note
         ----
@@ -602,7 +628,8 @@ class FuzzyArtMap(BaseEstimator):
         return self.node_increase_step
     
     def get_committed_nodes(self) -> str:
-        """Helper method to get all the nodes that have been used during model training
+        """
+        Helper method to get all the nodes that have been used during model training
         
         Returns
         -------
