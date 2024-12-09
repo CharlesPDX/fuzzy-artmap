@@ -214,7 +214,7 @@ class FuzzyArtMap(BaseEstimator):
             "auto_complement_encode": self.auto_complement_encode,
         }
 
-    def _resonance_search_vector(self, input_vector: torch.Tensor, already_reset_nodes: list[int], rho_a: float) -> tuple[int, float]:
+    def _resonance_search_vector(self, input_vector: torch.Tensor, already_reset_nodes: set[int], rho_a: float) -> tuple[int, float]:
         """Core resonance search function over F1-F2 fields
 
         Parameters
@@ -244,7 +244,7 @@ class FuzzyArtMap(BaseEstimator):
         number_of_f2_nodes, match_function, category_choice_function = self._calculate_category_choice(input_vector)
         indices = torch.argsort(category_choice_function, stable=True, descending=True)      
         
-        category_choice_function[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self._dtype, device=self._device)
+        category_choice_function[list(already_reset_nodes)] = torch.zeros((len(already_reset_nodes), ), dtype=self._dtype, device=self._device)
         has_evaluated_all_nodes = False
         while not resonant_a:
             for category_index in indices:
@@ -257,7 +257,7 @@ class FuzzyArtMap(BaseEstimator):
                     break
                 else:
                     resonant_a = False
-                    already_reset_nodes.append(indices[category_index].item())
+                    already_reset_nodes.add(category_index.item())
                     category_choice_function[indices[category_index].item()] = 0
 
             # Creating new nodes if we've reset all of them
@@ -282,7 +282,7 @@ class FuzzyArtMap(BaseEstimator):
                 has_evaluated_all_nodes = True
                 number_of_f2_nodes, match_function, category_choice_function = self._calculate_category_choice(input_vector)
                 indices = torch.argsort(category_choice_function, stable=True, descending=True)
-                category_choice_function[already_reset_nodes] = torch.zeros((len(already_reset_nodes), ), dtype=self._dtype, device=self._device)
+                category_choice_function[list(already_reset_nodes)] = torch.zeros((len(already_reset_nodes), ), dtype=self._dtype, device=self._device)
                 
         # return the selected category index j and the degree of membership
         return category_index.item(), match_function[category_index].item()
@@ -346,7 +346,7 @@ class FuzzyArtMap(BaseEstimator):
         """
         vigilance = self.baseline_vigilance # We start off with ARTa vigilance at baseline
         resonant_ab = False # Not resonating in the Fab match layer
-        already_reset_nodes = [] # We haven't rest any ARTa nodes for this input pattern yet, maintain list between resonance searches of Fa
+        already_reset_nodes = set() # We haven't rest any ARTa nodes for this input pattern yet, maintain list between resonance searches of Fa
         
         class_vector = class_vector.to(self._device)
         input_vector = input_vector.to(self._device)
@@ -366,9 +366,9 @@ class FuzzyArtMap(BaseEstimator):
             if category_match_function > self.map_field_vigilance or math.isclose(category_match_function, self.map_field_vigilance):
                 resonant_ab = True
             else: 
-                already_reset_nodes.append(selected_category)
+                already_reset_nodes.add(selected_category)
                 vigilance = match_function + self.vigilance_refinement_step
-                # This is ultimately a safety against floating point issues pusing vigilance over 1.0
+                # This is ultimately a safety against floating point issues pushing vigilance over 1.0
                 if vigilance > 1.0:
                     vigilance = 1.0 - self.vigilance_refinement_step
 

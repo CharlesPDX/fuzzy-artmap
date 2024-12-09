@@ -88,9 +88,9 @@ def test_torch_circle_square(pytorch_circle_data) -> None:
         correct = torch.all(prediction == ground_truth).item()
         test_predictions.update([correct])
     stop_time = datetime.now()
-    assert test_predictions[True] == 940, "Expected 940 (94%) true positive rate"
-    assert test_predictions[False] == 60, "Expected 60 (6%) false positive rate"
-    assert torch.count_nonzero(x.get_weight_a()[:, 0] < 1, 0) == 18, "Expected 18 `in` classes"
+    assert test_predictions[True] == 933, "Expected 933 (93.3%) true positive rate"
+    assert test_predictions[False] == 67, "Expected 67 (6.7%) false positive rate"
+    assert torch.count_nonzero(x.get_weight_a()[:, 0] < 1, 0) == 20, "Expected 20 `in` classes"
     elapsed_time = (stop_time-start_time).total_seconds()
     assert elapsed_time < 0.2, "Expected testing to take less than 200ms"
 
@@ -126,9 +126,9 @@ def test_numpy_to_torch_circle_square(numpy_circle_data) -> None:
         test_predictions.update([correct])
     stop_time = datetime.now()
     
-    assert test_predictions[True] == 927, "Expected 927 (92.7%) true positive rate"
-    assert test_predictions[False] == 73, "Expected 73 (7.3%) false positive rate"
-    assert torch.count_nonzero(x.get_weight_a()[:, 0] < 1, 0) == 20, "Expected 20 `in` classes"
+    assert test_predictions[True] == 915, "Expected 915 (91.5%) true positive rate"
+    assert test_predictions[False] == 85, "Expected 85 (8.5%) false positive rate"
+    assert torch.count_nonzero(x.get_weight_a()[:, 0] < 1, 0) == 16, "Expected 16 `in` classes"
     elapsed_time = (stop_time-start_time).total_seconds()
     assert elapsed_time < 0.2, "Expected testing to take less than 200ms"
 
