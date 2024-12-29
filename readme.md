@@ -40,7 +40,7 @@ This applies the same circle test to a more procedural implementation of Fuzzy A
 This notebook illustrates the spiral test from Carpenter et al. (1992).
 
 ### 20_newsgroups.ipynb
-Example of using Fuzzy ARTMAP with text data. Downloads 20 Newsgroups using scikit-learn, uses TF-IDF vectorization, and demonstrates basic batch learning operations, and online active learning operations.
+Example of using Fuzzy ARTMAP with text data. Downloads 20 Newsgroups using scikit-learn, uses TF-IDF vectorization, and demonstrates basic batch learning operations, and online active learning operations. Reproduces and generates similar results to those published in Courchaine & Sethi, 2022.
 
 ### WI_breast_cancer.ipynb
 Example of using Fuzzy ARTMAP with continuous numeric data. Downloads the UCI ML Breast Cancer Wisconsin (Diagnostic) dataset using scikit-learn. Scales the data to the required [0,1] interval, splits the data into train (80%) and test (20%) sets, reshapes the labels and complement encodes the data and the labels. Fuzzy ARTMAP is then used in a typically offline batch training mode with the training data, and then the predictions are performed on the test set, evaluating the results for accuracy, precision, and recall.
