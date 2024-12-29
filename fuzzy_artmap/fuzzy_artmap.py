@@ -615,7 +615,7 @@ class FuzzyArtMap(BaseEstimator):
         
         Note
         ----
-        This is works off the map field weights to get the number of categories (F2 nodes) from the model
+        This works off the map field weights to get the number of categories (F2 nodes) from the model
         """
         return self._weight_ab.shape[0]
 
